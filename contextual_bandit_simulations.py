@@ -88,10 +88,6 @@ def main(X, y):
         for model in range(len(models)): 
             lst_actions[model] = simulate_rounds(models[model],lst_rewards[model],lst_actions[model],X, y,batch_st, batch_end)
 
-
-
-    # print(get_mean_reward(lst_rewards[1], batch_size))
-
     lwd = 5
     cmap = plt.get_cmap('tab20')
     colors=plt.cm.tab20(np.linspace(0, 1, 20))
@@ -137,11 +133,7 @@ def static_or_dynamic(X, y, users, type):
     static_user_rows = []
     # Figure out which feature change the most
     for user_counts in feature_change_counts_per_user:
-        # print(np.min(user_counts), round(np.mean(user_counts), 2), np.max(user_counts))
         mean = np.mean(user_counts)
-
-        # print(len(np.where(user_counts<mean)[0]))
-        # print(len(np.where(user_counts>=mean)[0]))
 
         dynamic_feature_indices = np.where(user_counts >= mean)[0]
         static_feature_indices = np.where (user_counts < mean)[0]
@@ -150,8 +142,6 @@ def static_or_dynamic(X, y, users, type):
         # # Get array of 50 lists, each one is the proper X row for for that user
         # x_dynamic = np.zeros(X.shape[1])
         # x_static = np.zeros(X.shape[1])
-
-
         # for feature in dynamic_feature_indices:
         #     x_dynamic[feature] = 1
         # for feature in static_feature_indices:
@@ -159,10 +149,6 @@ def static_or_dynamic(X, y, users, type):
 
         dynamic_user_rows.append(dynamic_feature_indices)
         static_user_rows.append(static_feature_indices)
-
-
-
-
 
 
     # I think I need to run the training process on a per user basis???? Could look into how to train a model with different features inputted for different users like this??
@@ -194,11 +180,9 @@ def generate_y(y, users):
         #     new_row.append(value)
         y_chunk_per_user[current_user].append(row)
 
-        # print(y_chunk_per_user[current_user])
-
     return y_chunk_per_user        
 if __name__ == "__main__":
-    X, y = parse_data("Bibtex/Bibtex_data.txt")
+    X, y = parse_data("data/Bibtex/Bibtex_data.txt")
     np.random.seed(0)
 
     print(X.shape)
@@ -213,7 +197,7 @@ if __name__ == "__main__":
     # Maybe save and load this data so I don't have to wait for it to calculate each run
 
     y_chunk_per_user = generate_y(y, users)
-    # Train for each user - tjis one uses DYNAMIC features only 
+    # Train for each user
     for user in range(1):
         # main(X, y)
         main(np.array(X_chunk_per_user[user]), np.array(y_chunk_per_user[user]))
