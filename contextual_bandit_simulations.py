@@ -15,8 +15,12 @@ def parse_data(filename):
         n_features = int(re.sub(r"^\d+\s(\d+)\s\d+.*$", r"\1", infoline))
         features, labels = load_svmlight_file(f, n_features=n_features, multilabel=True)
     mlb = MultiLabelBinarizer()
+    print(labels[0])
     labels = mlb.fit_transform(labels)
+    print(labels[0])
+    exit(1)
     features = np.array(features.todense())
+
     features = np.ascontiguousarray(features)
     return features, labels
 
@@ -63,7 +67,6 @@ def main(X, y):
         
         ## choosing actions for this batch
         actions_this_batch = model.predict(X_global[batch_st:batch_end, :]).astype('uint8')
-        
         # keeping track of the sum of rewards received
         rewards.append(y_global[np.arange(batch_st, batch_end), actions_this_batch].sum())
         
