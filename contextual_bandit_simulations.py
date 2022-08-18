@@ -1,4 +1,5 @@
 import pandas as pd, numpy as np, re
+from sklearn import preprocessing
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.datasets import load_svmlight_file
 from sklearn.linear_model import LogisticRegression
@@ -7,6 +8,7 @@ from contextualbandits.online import BootstrappedUCB, BootstrappedTS, LogisticUC
             ActiveExplorer, SoftmaxExplorer
 from copy import deepcopy
 import matplotlib.pyplot as plt
+import time
 
 def parse_data(filename):
     with open(filename, "rb") as f:
@@ -15,12 +17,8 @@ def parse_data(filename):
         n_features = int(re.sub(r"^\d+\s(\d+)\s\d+.*$", r"\1", infoline))
         features, labels = load_svmlight_file(f, n_features=n_features, multilabel=True)
     mlb = MultiLabelBinarizer()
-    print(labels[0])
     labels = mlb.fit_transform(labels)
-    print(labels[0])
-    exit(1)
     features = np.array(features.todense())
-
     features = np.ascontiguousarray(features)
     return features, labels
 
@@ -36,7 +34,6 @@ def main(X, y):
                                         beta_prior = beta_prior, random_state = 6666)
 
     models = [adaptive_greedy]
-
 
     # These lists will keep track of the rewards obtained by each policy
     rewards_obtained = []
@@ -75,7 +72,11 @@ def main(X, y):
         
         # now refitting the algorithms after observing these new rewards
         np.random.seed(batch_st)
-        model.fit(X_global[:batch_end, :], new_actions_hist, y_global[np.arange(batch_end), new_actions_hist],
+
+        # This is increasing in size over time, so it is retraininig on all past data essentially (should look this up to confirm, or whether it is also keeping track of historical data that it saw somehow or if this is a complete refit that cancels out all previous info)
+        current_X = X_global[:batch_end, :]
+
+        model.fit(current_X, new_actions_hist, y_global[np.arange(batch_end), new_actions_hist],
                 warm_start = True)
         
         return new_actions_hist
@@ -87,10 +88,9 @@ def main(X, y):
         batch_end = np.min([batch_end, X.shape[0]])
         
         for model in range(len(models)): 
-            lst_actions[model] = simulate_rounds(models[model],lst_rewards[model],lst_actions[model],X, y,batch_st, batch_end)
+            lst_actions[model] = simulate_rounds(models[model], lst_rewards[model], lst_actions[model], X, y, batch_st, batch_end)
 
     return rewards_obtained
-
 
 def get_mean_reward(reward_lst, batch_size):
     mean_rew=list()
@@ -107,11 +107,6 @@ def create_plot(rewards_list, label_list, batch_size, ):
     for index, inner_reward_list in enumerate(rewards_list):
         plt.plot(get_mean_reward(inner_reward_list, batch_size), label=label_list[index],linewidth=5,color=colors[index])
 
-    box = ax.get_position()
-    # ax.set_position([box.x0, box.y0 + box.height * 0.1,
-    #                 box.width, box.height * 1.25])
-    # ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05),
-    #       fancybox=True, ncol=3)
     plt.legend()
     plt.tick_params(axis='both', which='major')
 
@@ -119,7 +114,7 @@ def create_plot(rewards_list, label_list, batch_size, ):
 
     plt.xlabel(f'Rounds (models were updated every {batch_size} rounds)')
     plt.ylabel('Cumulative Mean Reward')
-    plt.title('Online Contextual Bandit Policies with Bibtext Dataset (159 labels, 1836 features)')
+    plt.title('AdaptiveGreedy with Bibtext Dataset with Different Partitions of Static vs. Dynamic Features')
     plt.grid()
     plt.show()
 
@@ -148,6 +143,7 @@ def static_or_dynamic(X, y, users):
     # Figure out which feature change the most
     for user_counts in feature_change_counts_per_user:
         mean = np.mean(user_counts)
+        print("The mean change amount per feature is: ", mean)
         first_quartile = np.quantile(user_counts, 0.25)
 
         dynamic_feature_indices = np.where(user_counts >= mean)[0]
@@ -155,13 +151,6 @@ def static_or_dynamic(X, y, users):
 
         dynamic_feature_indices_quartile = np.where(user_counts >= first_quartile)[0]
         static_feature_indices_quartile = np.where (user_counts < first_quartile)[0]
-        # # Get array of 50 lists, each one is the proper X row for for that user
-        # x_dynamic = np.zeros(X.shape[1])
-        # x_static = np.zeros(X.shape[1])
-        # for feature in dynamic_feature_indices:
-        #     x_dynamic[feature] = 1
-        # for feature in static_feature_indices:
-        #     x_static[feature] = 1
 
         dynamic_user_rows.append(dynamic_feature_indices)
         static_user_rows.append(static_feature_indices)
@@ -182,9 +171,6 @@ def static_or_dynamic(X, y, users):
 
         new_row_static = []
         new_row_dynamic = []
-
-
-
 
         users_features_dynamic_quartile = dynamic_user_rows_first_quartile[current_user]
         users_features_static_quartile = static_user_rows_first_quartile[current_user]
@@ -222,6 +208,8 @@ def generate_y(y, users):
 
     return y_chunk_per_user        
 if __name__ == "__main__":
+    start_time = time.time()
+
     X, y = parse_data("data/Bibtex/Bibtex_data.txt")
 
     # Add user ID randonly
@@ -235,8 +223,8 @@ if __name__ == "__main__":
     y_chunk_per_user = generate_y(y, users)
 
     # Make chart about number of users, how many static and dynamic for each
-    # for user in range(num_unique_users):
-    # print(f"User: {user + 1}", f"Number of Static Features: {np.array(X_chunk_per_user_static[user]).shape[1]}", f"Number of Dynamic Features: {np.array(X_chunk_per_user_dynamic[user]).shape[1]}")
+    for user in range(num_unique_users):
+        print(f"User: {user + 1}", f"Number of Static Features: {np.array(X_chunk_per_user_static[user]).shape[1]}", f"Number of Dynamic Features: {np.array(X_chunk_per_user_dynamic[user]).shape[1]}", f"Number of dynamic quartile features: {np.array(X_chunk_per_user_dynamic_quartile[user]).shape[1]}", f"Number of Static quartile features: {np.array(X_chunk_per_user_static_quartile[user]).shape[1]}")
     reward_all = main(X, y)
     reward_static_all = main(np.array(X_chunk_per_user_static[0]), np.array(y_chunk_per_user[0]))
     reward_dynamic_all = main(np.array(X_chunk_per_user_dynamic[0]), np.array(y_chunk_per_user[0]))
@@ -244,19 +232,20 @@ if __name__ == "__main__":
     reward_dynamic_all_quartile = main(np.array(X_chunk_per_user_dynamic_quartile[0]), np.array(y_chunk_per_user[0]))
 
     print(f"All Features: {X.shape[1]} features")
-    print(f"Static Only: {np.array(X_chunk_per_user_static[0]).shape[1]} static features")
-    print(f"Static Only (1st Quartile): {np.array(X_chunk_per_user_static_quartile[0]).shape[1]} static features")
-    print(f"Dynamic Only: {np.array(X_chunk_per_user_dynamic[0]).shape[1]} dynamic features")
-    print(f"Dynamic Only (Quartiles 2, 3, 4: {np.array(X_chunk_per_user_dynamic_quartile[0]).shape[1]} dynamic features")
+    print(f"All Static Only: {np.array(X_chunk_per_user_static[0]).shape[1]} static features")
+    print(f"Static (1st Quartile of total): {np.array(X_chunk_per_user_static_quartile[0]).shape[1]} static features")
+    print(f"All Dynamic Only: {np.array(X_chunk_per_user_dynamic[0]).shape[1]} dynamic features")
+    print(f"Dynamic (Quartiles 2, 3, 4 of total): {np.array(X_chunk_per_user_dynamic_quartile[0]).shape[1]} dynamic features")
 
 
-    rewards_list = [reward_all, reward_static_all, reward_static_all_quartile, reward_dynamic_all, reward_dynamic_all_quartile]
-    labels_list = ["All", "Static Only", "Static Only (1st Quartile)", "Dynamic Only", "Dynamic Only (Quartiles 2, 3, 4)"]
+    rewards_list = [reward_all, reward_static_all, reward_dynamic_all, reward_static_all_quartile, reward_dynamic_all_quartile]
+    # rewards_list = [reward_all]
+
+    labels_list = ["All", "Static Only", "Dynamic Only", "Static Only (1st Quartile)", "Dynamic Only (Quartiles 2, 3, 4)"]
+    # labels_list = ["All"]
+
+
+    print("--- %s seconds ---" % (time.time() - start_time))
+
+
     create_plot(rewards_list, labels_list, 50)
-        # TODO: make static_or_dynamic return one split by user with all features
-        # TODO: make static_or_dynamic return one split by user with only static features in first quartile
-
-    
-
-
-

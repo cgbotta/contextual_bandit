@@ -73,20 +73,48 @@ class Student:
 
             self.questions_with_correctness.append(( question_id, correct ))
 
-
     def get_subject_accuracies_array(self, subject_map):
+        self.questions_since_last_diff = self.questions_since_last_diff + 1
+
+        if self.questions_since_last_diff > 10:
+            new = np.zeros(len(subject_map))
+            for subject_id, value in sorted(self.subject_accuracy.items()):
+                    new[subject_map[subject_id]] = value[2]
+            self.previous_knowledge_state = self.current_knowledge_state
+            self.current_knowledge_state = new
+
+            # This case hopefully means they are different
+            if len(self.previous_knowledge_state) != 0:
+                self.current_diff = np.absolute(np.subtract(self.current_knowledge_state, self.previous_knowledge_state))
+            else:
+                self.current_diff = self.current_knowledge_state
+            self.questions_since_last_diff = 0
+            self.diffs_taken = self.diffs_taken + 1
+            diff_sum = sum(self.current_diff)
+            self.total_diff = self.total_diff + diff_sum
+            self.average_diff = self.total_diff / self.diffs_taken
+
+            # Clearing this resets everything, so it is as if we are doing a sliding window
+            self.subject_accuracy = {}
+
+    def get_subject_accuracies_array_static(self, subject_map, user_metadata):
         self.questions_since_last_diff = self.questions_since_last_diff + 1
 
         if self.questions_since_last_diff > 10:
             new = np.zeros(388)
             for subject_id, value in sorted(self.subject_accuracy.items()):
                 new[subject_map[subject_id]] = value[2]
+
+            # Add static features
+            metadata = user_metadata[self.user_id]
+            for val in metadata:
+                new = np.append(new, val)
+                
             self.previous_knowledge_state = self.current_knowledge_state
             self.current_knowledge_state = new
 
             # This case hopefully means they are different
             if len(self.previous_knowledge_state) != 0:
-                # Maybe this will take too long? Probably fine
                 self.current_diff = np.absolute(np.subtract(self.current_knowledge_state, self.previous_knowledge_state))
             else:
                 self.current_diff = self.current_knowledge_state
