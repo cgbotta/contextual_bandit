@@ -1,25 +1,13 @@
-from dataclasses import replace
-from email.utils import parsedate
-from re import sub
-from typing import AsyncGenerator
-import operator
 import numpy as np
-from sklearn.cluster import KMeans
 from collections import defaultdict
-from statistics import mean
-from sklearn.preprocessing import MultiLabelBinarizer
-from sklearn.datasets import load_svmlight_file
 import pandas as pd
 from student_model import Student
-import matplotlib.pyplot as plt
 import ast
-import time
-import random
-import math
-from scipy.stats import norm
 import pickle
-from os.path import exists, isfile, join
+from os.path import exists
 from os import listdir
+import shutil
+
 
 class load_ednet_DALOCB:
     def __init__(self):
@@ -36,7 +24,6 @@ class load_ednet_DALOCB:
         def preprocess_dataset(user_dfs, user_ids, question_metadata):
             user_question_correct_tuple_list = []
             all_users = set()
-            # all_questions = set()
 
             for index, user_df in enumerate(user_dfs):
                 user_id = user_ids[index]
@@ -53,7 +40,6 @@ class load_ednet_DALOCB:
                     else:
                         isCorrect = 0
 
-                    # all_questions.add(question_id)
                     user_question_correct_tuple_list.append( (index, question_id, isCorrect) )
             
             all_users = list(all_users)
@@ -85,8 +71,11 @@ class load_ednet_DALOCB:
             if df.shape[0] >= 1000:
                 user_dfs.append(parse_data("../../KT1/" + filename))
                 user_ids.append(filename.split('.')[0])
+
+                shutil.copy2("../../KT1/" + filename, "./files_to_save/")
             if len(user_dfs) == 50:
                 break
+        exit()
 
         # Load question metadata
         question_metadata = parse_data("../../contents/questions.csv")
@@ -94,12 +83,10 @@ class load_ednet_DALOCB:
         user_question_correct_tuple_list, self.all_users = preprocess_dataset(user_dfs, user_ids, question_metadata)        
         self.full_context, self.question_subject_map = create_context(question_metadata)
 
-        # Set up the lists of which users answered which questions correctly
         self.pos_index = defaultdict(list)
         self.neg_index = defaultdict(list)
 
         for i in user_question_correct_tuple_list:
-            # Get user index
             index = i[0]
             if i[2] == 1:
                 self.pos_index[index].append(i[1])
@@ -119,7 +106,6 @@ class load_ednet_DALOCB:
         p_d = len(self.pos_index[user])
         n_d = len(self.neg_index[user])
 
-        # These are all question indices
         pos = np.array(self.pos_index[user])[np.random.choice(range(p_d), replace=True)]
         neg = np.array(self.neg_index[user])[np.random.choice(range(n_d), 9, replace=True)]
         arms = np.concatenate((neg[:arm], [pos], neg[arm:]), axis=0)
@@ -153,7 +139,6 @@ class load_ednet_LOCB:
         def preprocess_dataset(user_dfs, user_ids, question_metadata):
             user_question_correct_tuple_list = []
             all_users = set()
-            # all_questions = set()
 
             for index, user_df in enumerate(user_dfs):
                 user_id = user_ids[index]
@@ -170,7 +155,6 @@ class load_ednet_LOCB:
                     else:
                         isCorrect = 0
 
-                    # all_questions.add(question_id)
                     user_question_correct_tuple_list.append( (index, question_id, isCorrect) )
             
             all_users = list(all_users)
@@ -211,12 +195,10 @@ class load_ednet_LOCB:
         user_question_correct_tuple_list, self.all_users = preprocess_dataset(user_dfs, user_ids, question_metadata)        
         self.full_context, self.question_subject_map = create_context(question_metadata)
 
-        # Set up the lists of which users answered which questions correctly
         self.pos_index = defaultdict(list)
         self.neg_index = defaultdict(list)
 
         for i in user_question_correct_tuple_list:
-            # Get user index
             index = i[0]
             if i[2] == 1:
                 self.pos_index[index].append(i[1])
@@ -236,7 +218,6 @@ class load_ednet_LOCB:
         p_d = len(self.pos_index[user])
         n_d = len(self.neg_index[user])
 
-        # These are all question indices
         pos = np.array(self.pos_index[user])[np.random.choice(range(p_d), replace=True)]
         neg = np.array(self.neg_index[user])[np.random.choice(range(n_d), 9, replace=True)]
         arms = np.concatenate((neg[:arm], [pos], neg[arm:]), axis=0)
@@ -249,115 +230,7 @@ class load_ednet_LOCB:
         rwd[arm] = 1
         
         return user, contexts, rwd
-
-class load_movielen_new:
-    def __init__(self):
-        # Fetch data
-        self.m = np.load("../movie_2000users_10000items_entry.npy")
-        self.U = np.load("../movie_2000users_10000items_features.npy")
-        self.I = np.load("../movie_10000items_2000users_features.npy")
-
-        kmeans = KMeans(n_clusters=50, random_state=0).fit(self.U)
-        self.groups = kmeans.labels_
-        print(self.groups)
-        self.n_arm = 10
-        self.dim = 10
-        self.num_user = 50
-        self.pos_index = defaultdict(list)
-        self.neg_index = defaultdict(list)
-        for i in self.m:
-            if i[2] ==1:
-                self.pos_index[self.groups[i[0]]].append((i[0], i[1]))
-            else:
-                self.neg_index[self.groups[i[0]]].append((i[0], i[1]))   
-
-
-    def step(self):    
-        u = np.random.choice(range(2000))
-        g = self.groups[u]
-        arm = np.random.choice(range(10))
-        #print(pos_index.shape)
-        p_d = len(self.pos_index[g])
-        n_d = len(self.neg_index[g])
-        pos = np.array(self.pos_index[g])[np.random.choice(range(p_d), 9, replace=True)]
-        neg = np.array(self.neg_index[g])[np.random.choice(range(n_d), replace=True)]
-        X_ind = np.concatenate((pos[:arm], [neg], pos[arm:]), axis=0)
-        X = []
-        for ind in X_ind:
-            #X.append(np.sqrt(np.multiply(self.I[ind], u_fea)))
-            X.append(self.I[ind[1]])
-        rwd = np.zeros(self.n_arm)
-        rwd[arm] = 1
-        contexts = norm.pdf(np.array(X), loc=0, scale=0.5)
-        return g, contexts, rwd
-    
-class load_yelp_new:
-    def __init__(self):
-        # Fetch data
-        # This appears to be a list of >100,000 tuples where each tuple is (user, restaurant, if they rated it over 3 stars)
-        self.m = np.load("../yelp_2000users_10000items_entry.npy")
-        # This is 2000 rows (1 for each user) with 10 columns (user features, perhaps)
-        self.U = np.load("../yelp_2000users_10000items_features.npy")
-        # This is 10,000 rows (1 for each restaurant, perhaps) with 10 columns (restarant features, perhaps)
-        self.I = np.load("../yelp_10000items_2000users_features.npy")
-
-        # Cluster based on the user features 
-        kmeans = KMeans(n_clusters=50, random_state=0).fit(self.U)
-        self.groups = kmeans.labels_
-        self.n_arm = 10
-        self.dim = 10
-        self.num_user = 50
-
-        # This chunk is crazy. It creates a dictionary of length num_users where the key
-        # is the user_num, which is equivalent to the number of clusters. Each of these 
-        # entries are a list of tuples. The tuples are:
-        # (original user index 0-1999, feature index 0-9999) 
-        self.pos_index = defaultdict(list)
-        self.neg_index = defaultdict(list)
-        for i in self.m:
-            if i[2] ==1:
-                self.pos_index[self.groups[i[0]]].append((i[0], i[1]))
-            else:
-                self.neg_index[self.groups[i[0]]].append((i[0], i[1]))   
-
-   
-    def step(self):    
-        # get a random user (in my case I can go in order of the users in the data)
-        u = np.random.choice(range(2000))
-        # Get the user group (which is the cluster of all similar users) to use as the
-        # "real" user
-        g = self.groups[u]
-        # randomly placing the position of the reward
-        arm = np.random.choice(range(10))
-
-        # Not sure what these are yet exactly. Might just be setting up a scenario where 
-        # one arm is 1 and the other 9 arns are 0. I might be able to skip past this part
-        # if my data is already set up correctly for reward
-        p_d = len(self.pos_index[g])
-        n_d = len(self.neg_index[g])
-
-        # These are (user, user feature) tuples
-        pos = np.array(self.pos_index[g])[np.random.choice(range(p_d), 9, replace=True)]
-        # This is 1 index that I assume will be a 1. It is randonly selected
-        neg = np.array(self.neg_index[g])[np.random.choice(range(n_d), replace=True)]
-
-        # This is just a concatenation of pos and neg
-        X_ind = np.concatenate((pos[:arm], [neg], pos[arm:]), axis=0)
-
-        X = []
-        for ind in X_ind:
-            #X.append(np.sqrt(np.multiply(self.I[ind], u_fea)))
-            X.append(self.I[ind[1]])
-
-        rwd = np.zeros(self.n_arm)
-        rwd[arm] = 1
-        contexts = norm.pdf(np.array(X), loc=0, scale=0.5)
-        # Return the user (integer),
-        # the contexts (10 elements array, each element is a 10-element array. 
-        # I think this gives one context),
-        # and the reward (10 element array with 9 0s and 1 1)
-        return g, contexts, rwd
-    
+       
 class load_eedi_DALOCB:
     def __init__(self):
         def parse_data(filename):
@@ -420,10 +293,10 @@ class load_eedi_DALOCB:
             questions_answered_per_student_df = pd.DataFrame(list(questions_answered_per_student.items()), columns = ['student_id','questions_answered'])
             new_one = questions_answered_per_student_df.sort_values('questions_answered', ascending = False)
 
-            top_100 = new_one.head(num_users)
-            top_100_ids = top_100['student_id'].tolist()
+            top_users = new_one.head(num_users)
+            top_user_ids = top_users['student_id'].tolist()
 
-            return student_dict, top_100_ids
+            return student_dict, top_user_ids
 
         # Question metadata
         question_metadata_df = parse_data("./public_data/metadata/question_metadata_task_1_2.csv")
@@ -483,16 +356,13 @@ class load_eedi_DALOCB:
             print("------------------------")
             exit()
 
-        # Use top_ids to create new df to feed into main alg
         filtered_df = self.all_data_df[self.all_data_df.UserId.isin(self.top_ids)]
 
-        # preprocess dataset. TODO could maybe save some of these as npy files
         user_question_correct_tuple_list, self.all_users, self.full_context = preprocess_dataset(filtered_df, self.question_subject_map, self.subjects)        
 
         self.num_user = len(self.all_users)
         self.dim = 388
 
-        # Set up the lists of which users got which questions correctly
         self.pos_index = defaultdict(list)
         self.neg_index = defaultdict(list)
         for i in user_question_correct_tuple_list:
@@ -502,17 +372,13 @@ class load_eedi_DALOCB:
                 self.neg_index[i[0]].append(i[1])  
 
     def step(self):
-        # This is 0-99
         user = np.random.choice(self.num_user)
-        # Mapping to real user_id
         actual_user_id = self.top_ids[user]
-
         arm = np.random.choice(range(10))
 
         p_d = len(self.pos_index[actual_user_id])
         n_d = len(self.neg_index[actual_user_id])
 
-        # These are all question indices
         pos = np.array(self.pos_index[actual_user_id])[np.random.choice(range(p_d), replace=True)]
         neg = np.array(self.neg_index[actual_user_id])[np.random.choice(range(n_d), 9, replace=True)]
         arms = np.concatenate((neg[:arm], [pos], neg[arm:]), axis=0)
@@ -524,7 +390,6 @@ class load_eedi_DALOCB:
         rwd = np.zeros(10)
         rwd[arm] = 1
 
-        # Need to add to a knowledge graph each time a question is considered
         question_to_add_index = np.random.choice(range(10))
         question_to_add_id = arms[question_to_add_index]
         user_correct = rwd[question_to_add_index]
@@ -636,16 +501,13 @@ class load_eedi_LOCB:
             print("------------------------")
             exit()
             
-        # Use top_ids to create new df to feed into main alg
         filtered_df = self.all_data_df[self.all_data_df.UserId.isin(self.top_ids)]
 
-        # preprocess dataset. TODO could maybe save some of these as npy files
         user_question_correct_tuple_list, self.all_users, self.full_context = preprocess_dataset(filtered_df, self.question_subject_map, self.subjects)        
         
         self.num_user = len(self.all_users)
         self.dim = 388
 
-        # Set up the lists of which users got which questions correctly
         self.pos_index = defaultdict(list)
         self.neg_index = defaultdict(list)
         for i in user_question_correct_tuple_list:
@@ -655,17 +517,13 @@ class load_eedi_LOCB:
                 self.neg_index[i[0]].append(i[1])  
 
     def step(self):
-        # This is 0-99
         user = np.random.choice(self.num_user)
-        # Mapping to real user_id
         actual_user_id = self.top_ids[user]
-
         arm = np.random.choice(range(10))
 
         p_d = len(self.pos_index[actual_user_id])
         n_d = len(self.neg_index[actual_user_id])
 
-        # These are all question indices
         pos = np.array(self.pos_index[actual_user_id])[np.random.choice(range(p_d), replace=True)]
         neg = np.array(self.neg_index[actual_user_id])[np.random.choice(range(n_d), 9, replace=True)]
         arms = np.concatenate((neg[:arm], [pos], neg[arm:]), axis=0)
@@ -740,16 +598,16 @@ class load_eedi_DALOCB_static:
             questions_answered_per_student_df = pd.DataFrame(list(questions_answered_per_student.items()), columns = ['student_id','questions_answered'])
             new_one = questions_answered_per_student_df.sort_values('questions_answered', ascending = False)
 
-            top_100 = new_one.head(num_users)
-            print(top_100.shape)
-            print(top_100)
+            top_users = new_one.head(num_users)
+            print(top_users.shape)
+            print(top_users)
 
-            top_100_ids = top_100['student_id'].tolist()
+            top_user_ids = top_users['student_id'].tolist()
 
-            for id in top_100_ids:
+            for id in top_user_ids:
                 print(len(student_dict[id].questions_answered))
 
-            return student_dict, top_100_ids
+            return student_dict, top_user_ids
 
         # Question metadata
         question_metadata_df = parse_data("./public_data/metadata/question_metadata_task_1_2.csv")
@@ -810,16 +668,13 @@ class load_eedi_DALOCB_static:
             print("------------------------")
             exit()
 
-        # Use top_ids to create new df to feed into main alg
         filtered_df = self.all_data_df[self.all_data_df.UserId.isin(self.top_ids)]
 
-        # preprocess dataset. TODO could maybe save some of these as npy files
         user_question_correct_tuple_list, self.all_users, self.full_context = preprocess_dataset(filtered_df, self.question_subject_map, self.subjects)        
 
         self.num_user = len(self.all_users)
         self.dim = 388
 
-        # Set up the lists of which users got which questions correctly
         self.pos_index = defaultdict(list)
         self.neg_index = defaultdict(list)
         for i in user_question_correct_tuple_list:
@@ -829,17 +684,13 @@ class load_eedi_DALOCB_static:
                 self.neg_index[i[0]].append(i[1])  
 
     def step(self):
-        # This is 0-99
         user = np.random.choice(self.num_user)
-        # Mapping to real user_id
         actual_user_id = self.top_ids[user]
-
         arm = np.random.choice(range(10))
 
         p_d = len(self.pos_index[actual_user_id])
         n_d = len(self.neg_index[actual_user_id])
 
-        # These are all question indices
         pos = np.array(self.pos_index[actual_user_id])[np.random.choice(range(p_d), replace=True)]
         neg = np.array(self.neg_index[actual_user_id])[np.random.choice(range(n_d), 9, replace=True)]
         arms = np.concatenate((neg[:arm], [pos], neg[arm:]), axis=0)
@@ -851,7 +702,6 @@ class load_eedi_DALOCB_static:
         rwd = np.zeros(10)
         rwd[arm] = 1
 
-        # Need to add to a knowledge graph each time a question is considered
         question_to_add_index = np.random.choice(range(10))
         question_to_add_id = arms[question_to_add_index]
         user_correct = rwd[question_to_add_index]

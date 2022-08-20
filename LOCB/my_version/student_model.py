@@ -7,7 +7,6 @@ class Student:
         self.total_questions_answered = 0
         self.correct_answers = 0
         self.questions_with_correctness = []
-        # Key is question ID, value is correct (1) or incorrect (0)
         self.questions_answered = {}
         
         self.current_knowledge_state = []
@@ -21,7 +20,6 @@ class Student:
     def add_question_answered(self, question_id, correct, subjects):
         if question_id in self.questions_answered:
             return
-            # print("Error: student " + str(self.user_id) + " answered question " + str(question_id) + " multiple times!")
         else:
             self.questions_answered[question_id] = correct
             self.total_questions_answered = self.total_questions_answered + 1
@@ -47,7 +45,6 @@ class Student:
     def add_question_answered_percentage(self, question_id, correct, subjects):
         if question_id in self.questions_answered:
             return
-            # print("Error: student " + str(self.user_id) + " answered question " + str(question_id) + " multiple times!")
         else:
             self.questions_answered[question_id] = correct
             self.total_questions_answered = self.total_questions_answered + 1
@@ -73,17 +70,16 @@ class Student:
 
             self.questions_with_correctness.append(( question_id, correct ))
 
-    def get_subject_accuracies_array(self, subject_map):
+    def get_subject_accuracies_array(self, subject_map, user_update_frequency):
         self.questions_since_last_diff = self.questions_since_last_diff + 1
 
-        if self.questions_since_last_diff > 10:
+        if self.questions_since_last_diff > user_update_frequency:
             new = np.zeros(len(subject_map))
             for subject_id, value in sorted(self.subject_accuracy.items()):
                     new[subject_map[subject_id]] = value[2]
             self.previous_knowledge_state = self.current_knowledge_state
             self.current_knowledge_state = new
 
-            # This case hopefully means they are different
             if len(self.previous_knowledge_state) != 0:
                 self.current_diff = np.absolute(np.subtract(self.current_knowledge_state, self.previous_knowledge_state))
             else:
@@ -97,11 +93,11 @@ class Student:
             # Clearing this resets everything, so it is as if we are doing a sliding window
             self.subject_accuracy = {}
 
-    def get_subject_accuracies_array_static(self, subject_map, user_metadata):
+    def get_subject_accuracies_array_static(self, subject_map, user_metadata, user_update_frequency):
         self.questions_since_last_diff = self.questions_since_last_diff + 1
 
-        if self.questions_since_last_diff > 10:
-            new = np.zeros(388)
+        if self.questions_since_last_diff > user_update_frequency:
+            new = np.zeros(len(subject_map))
             for subject_id, value in sorted(self.subject_accuracy.items()):
                 new[subject_map[subject_id]] = value[2]
 
@@ -113,7 +109,6 @@ class Student:
             self.previous_knowledge_state = self.current_knowledge_state
             self.current_knowledge_state = new
 
-            # This case hopefully means they are different
             if len(self.previous_knowledge_state) != 0:
                 self.current_diff = np.absolute(np.subtract(self.current_knowledge_state, self.previous_knowledge_state))
             else:

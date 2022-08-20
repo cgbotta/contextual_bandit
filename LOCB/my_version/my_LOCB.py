@@ -1,17 +1,10 @@
-# from collections import defaultdict
-from time import perf_counter
 import numpy as np
 from student_model import Student
-# import random
-# import sys 
-# import networkx as nx
 import pandas as pd
-
-
 
 class Cluster:
     def __init__(self, users, S, b, N):
-        self.users = set(users) # a list/array of users
+        self.users = set(users)
         self.S = S
         self.b = b
         self.N = N
@@ -86,7 +79,6 @@ class LOCB:
         self.S[i] += np.outer(x, x)
         self.b[i] += y * x
         self.N[i] += 1
-
         self.Sinv[i], self.theta[i] = self._update_inverse(self.S[i], self.b[i], self.Sinv[i], x, self.N[i])
         
         for c in self.cluster_inds[i]:
@@ -95,9 +87,6 @@ class LOCB:
             self.clusters[c].N += 1
             self.clusters[c].Sinv = np.linalg.inv(self.clusters[c].S)
             self.clusters[c].theta = np.matmul(self.clusters[c].Sinv, self.clusters[c].b)
-            
-
-        
     
     def update(self, i, t):
         def _factT(m):
@@ -132,8 +121,6 @@ class LOCB:
                 
                     if self.if_d: thre = self.gamma 
                     else: thre = self.gamma/4
-                    # print("-----------")
-                    # print(_factT(self.N[seed]), thre)
                     if _factT(self.N[seed]) <= thre:
                         self.seed_state[seed] = 1
                         self.results.append({seed:list(self.clusters[seed].users)}) 
@@ -153,7 +140,7 @@ class LOCB:
                   
 class DA_Cluster:
     def __init__(self, users, S, b, N):
-        self.users = set(users) # a list/array of users
+        self.users = set(users)
         self.S = S
         self.b = b
         self.N = N
@@ -161,33 +148,31 @@ class DA_Cluster:
         self.theta = np.matmul(self.Sinv, self.b)
 
 class DA_LOCB:
-    def __init__(self, num_users, d, gamma, delta, detect_cluster, num_clusters):
+    def __init__(self, num_users, d, gamma, delta, detect_cluster, num_clusters, update_cluster_frequency, update_user_frequency):
         self.S = {i:np.eye(d) for i in range(num_users)}
         self.b = {i:np.zeros(d) for i in range(num_users)}
         self.Sinv = {i:np.eye(d) for i in range(num_users)}
         self.theta = {i:np.zeros(d) for i in range(num_users)}
         self.users = range(num_users)
 
-        # Create DA versions of everything
         self.DA_Students = {}
         for user in self.users:
-            # IMPORTANT: These are using ID of 0-49 rather than actual ID
             self.DA_Students[user] = Student(user) 
         
         self.clusters = {}
         self.num_clusters = num_clusters
-            
         self.N = np.zeros(num_users)
         self.gamma = gamma
         self.results = []
         self.fin = 0
-        self.groups = [0] * num_users
-                    
+        self.groups = [0] * num_users          
         self.d = d
         self.n = num_users
         self.selected_cluster = 0 
         self.delta = delta
         self.if_d = detect_cluster
+        self.update_cluster_frequency = update_cluster_frequency
+        self.update_user_frequency = update_user_frequency
         
     def _beta(self, N, t):
         return np.sqrt(self.d * np.log(1 + N / self.d) + 4 * np.log(t) + np.log(2)) + 1
@@ -201,38 +186,30 @@ class DA_LOCB:
         return Sinv, theta
     
     def recommend(self, u, items, t):
-        # Just get info based on individuals (no clustering info)
         if not self.clusters:
             no_cluster = self._select_item_ucb(self.S[u], self.Sinv[u], self.theta[u], items, self.N[u], t)
             return no_cluster[1]
-        # Use cluster info
         else:
-            # TODO Get cluster that user is in 
             c = self.groups[u]
             no_cluster = self._select_item_ucb(self.S[u], self.Sinv[u], self.theta[u], items, self.N[u], t)
             cluster = self.clusters[c]
             cluster_response = self._select_item_ucb(cluster.S,cluster.Sinv, cluster.theta, items, cluster.N, t)
             maximium = max(no_cluster, cluster_response)
-            return maximium[1]
-            # return cluster_response[1]
-  
+            return maximium[1]  
         
     def _select_item_ucb(self, S, Sinv, theta, items, N, t):
         ucbs = np.dot(items, theta) + self._beta(N, t) * (np.matmul(items, Sinv) * items).sum(axis = 1)
         res = max(ucbs)
         it = np.argmax(ucbs)
         return (res, it)
-        
 
     def store_info(self, user, x, r, t, question_id, user_correct, question_subject_map, subject_map):
         self.S[user] += np.outer(x, x)
         self.b[user] += r * x
         self.N[user] += 1
-
         self.Sinv[user], self.theta[user] = self._update_inverse(self.S[user], self.b[user], self.Sinv[user], x, self.N[user])
         
         if self.clusters:
-            # Get cluster that user is in and update it
             c = self.groups[user]
             self.clusters[c].S += np.outer(x, x)
             self.clusters[c].b += r * x
@@ -241,51 +218,37 @@ class DA_LOCB:
                 self.clusters[c].Sinv = np.linalg.inv(self.clusters[c].S)
             self.clusters[c].theta = np.matmul(self.clusters[c].Sinv, self.clusters[c].b)
         
-        # Update knowledge
+        # Update the student subject accuracies
         self.DA_Students[user].add_question_answered_percentage(question_id, user_correct, question_subject_map[question_id])
-
-        self.DA_Students[user].get_subject_accuracies_array(subject_map)
-
+        self.DA_Students[user].get_subject_accuracies_array(subject_map, self.update_user_frequency)
 
     def update(self, i, t):
-        def _factT(m):
-            if self.if_d:
-                delta = self.delta / self.n
-                nu = np.sqrt(2*self.d*np.log(1 + t) + 2*np.log(2/delta)) +1
-                de = np.sqrt(1+m/4)*np.power(self.n, 1/3)
-                return nu/de
-            else:
-                return np.sqrt((1 + np.log(1 + m)) / (1 + m))
-        
-        if t == 2000 or (t > 2000 and t % 1000 == 0):
+        if t % self.update_cluster_frequency == 0 and t > 0:
             # Get all the dynamics for all the users
             dynamics = []
 
             for user in self.users:
                 avg_diff = self.DA_Students[user].average_diff
-                dynamics.append(avg_diff)
+                temp_dict = (user,avg_diff)
+                dynamics.append(temp_dict)
 
-            tri_tile = pd.DataFrame(dynamics).quantile([0.33, .67])     
+            df = pd.DataFrame(dynamics)
+            df_sorted = df.sort_values(by=[1])
 
-            one_third =  tri_tile.iloc[0][0]   
-            two_third =  tri_tile.iloc[1][0]   
-            new_groups = [0] * 50
+            user_list = df_sorted.iloc[:, 0].tolist()
+            groups = np.array_split(user_list, self.num_clusters)
 
-            for index, value in enumerate(dynamics):
-                if value <= one_third:
-                    new_groups[index] = 0
-                elif value <= two_third:
-                    new_groups[index] = 1
-                else:
-                    new_groups[index] = 2 
-                    
-            def indices(mylist, value):
-                return [i for i,x in enumerate(mylist) if x==value]              
+            new_groups = [0] * len(user_list)
+
+            for user in self.users:
+                for index, sub_list in enumerate(groups):
+                    if user in sub_list:
+                        new_groups[user] = index            
             
-            if t == 2000:
+            if t == self.update_cluster_frequency:
                 # Cluster for the first time
                 for cluster in range(self.num_clusters):
-                    users_for_cluster = indices(new_groups, cluster)
+                    users_for_cluster = groups[cluster]
                     self.clusters[cluster] = Cluster(users=users_for_cluster, S=np.eye(self.d), b=np.zeros(self.d), N=1)
                 self.groups = new_groups
 
@@ -296,23 +259,18 @@ class DA_LOCB:
                     old_group = self.groups[user]
                     if new_group != old_group:
                         self.clusters[old_group].users.remove(user)
-                        # self.cluster_inds[i].remove(seed)  
                         self.clusters[old_group].S = self.clusters[old_group].S - self.S[user] + np.eye(self.d)
                         self.clusters[old_group].b = self.clusters[old_group].b - self.b[user]
                         self.clusters[old_group].N = self.clusters[old_group].N - self.N[user]
                            
                         self.clusters[new_group].users.add(user)
-                        # self.cluster_inds[i].append(new_group)
                         self.clusters[new_group].S = self.clusters[new_group].S + self.S[user] - np.eye(self.d)
                         self.clusters[new_group].b = self.clusters[new_group].b + self.b[user]
                         self.clusters[new_group].N = self.clusters[new_group].N + self.N[user]
                 self.groups = new_groups
-                for c in range(self.num_clusters):
-                    cluster = self.clusters[c]
-                    print(cluster.users)
                                                   
 class DA_LOCB_Static:
-    def __init__(self, num_users, d, gamma, delta, detect_cluster, num_clusters):
+    def __init__(self, num_users, d, gamma, delta, detect_cluster, num_clusters, update_cluster_frequency, update_user_frequency):
         self.S = {i:np.eye(d) for i in range(num_users)}
         self.b = {i:np.zeros(d) for i in range(num_users)}
         self.Sinv = {i:np.eye(d) for i in range(num_users)}
@@ -321,23 +279,22 @@ class DA_LOCB_Static:
 
         self.DA_Students = {}
         for user in self.users:
-            # IMPORTANT: These are using ID of 0-49 rather than actual ID
             self.DA_Students[user] = Student(user) 
 
         self.clusters = {}
         self.num_clusters = num_clusters
-            
         self.N = np.zeros(num_users)
         self.gamma = gamma
         self.results = []
         self.fin = 0
-        self.groups = [0] * num_users
-                    
+        self.groups = [0] * num_users    
         self.d = d
         self.n = num_users
         self.selected_cluster = 0 
         self.delta = delta
         self.if_d = detect_cluster
+        self.update_cluster_frequency = update_cluster_frequency
+        self.update_user_frequency = update_user_frequency
         
     def _beta(self, N, t):
         return np.sqrt(self.d * np.log(1 + N / self.d) + 4 * np.log(t) + np.log(2)) + 1
@@ -372,7 +329,6 @@ class DA_LOCB_Static:
         self.S[user] += np.outer(x, x)
         self.b[user] += r * x
         self.N[user] += 1
-
         self.Sinv[user], self.theta[user] = self._update_inverse(self.S[user], self.b[user], self.Sinv[user], x, self.N[user])
         
         if self.clusters:
@@ -384,49 +340,38 @@ class DA_LOCB_Static:
                 self.clusters[c].Sinv = np.linalg.inv(self.clusters[c].S)
             self.clusters[c].theta = np.matmul(self.clusters[c].Sinv, self.clusters[c].b)
         
-        # Update knowledge
+        # Update the student subject accuracies
         self.DA_Students[user].add_question_answered_percentage(question_id, user_correct, question_subject_map[question_id])
-
-        self.DA_Students[user].get_subject_accuracies_array_static(subject_map, user_metadata_map)
+        self.DA_Students[user].get_subject_accuracies_array_static(subject_map, user_metadata_map, self.update_user_frequency)
 
 
     def update(self, i, t):
-        def _factT(m):
-            if self.if_d:
-                delta = self.delta / self.n
-                nu = np.sqrt(2*self.d*np.log(1 + t) + 2*np.log(2/delta)) +1
-                de = np.sqrt(1+m/4)*np.power(self.n, 1/3)
-                return nu/de
-            else:
-                return np.sqrt((1 + np.log(1 + m)) / (1 + m))
-        
-        if t == 2000 or (t > 2000 and t % 1000 == 0):
+        if t % self.update_cluster_frequency == 0 and t > 0:
             # Get all the dynamics for all the users
             dynamics = []
+
             for user in self.users:
                 avg_diff = self.DA_Students[user].average_diff
-                dynamics.append(avg_diff)
+                temp_dict = (user,avg_diff)
+                dynamics.append(temp_dict)
 
-            tri_tile = pd.DataFrame(dynamics).quantile([0.33, .67])     
-            one_third =  tri_tile.iloc[0][0]   
-            two_third =  tri_tile.iloc[1][0]   
-            new_groups = [0] * 50
+            df = pd.DataFrame(dynamics)
+            df_sorted = df.sort_values(by=[1])
 
-            for index, value in enumerate(dynamics):
-                if value <= one_third:
-                    new_groups[index] = 0
-                elif value <= two_third:
-                    new_groups[index] = 1
-                else:
-                    new_groups[index] = 2
-                    
-            def indices(mylist, value):
-                return [i for i,x in enumerate(mylist) if x==value]              
+            user_list = df_sorted.iloc[:, 0].tolist()
+            groups = np.array_split(user_list, self.num_clusters)
+
+            new_groups = [0] * len(user_list)
+
+            for user in self.users:
+                for index, sub_list in enumerate(groups):
+                    if user in sub_list:
+                        new_groups[user] = index                
             
-            if t == 2000:
+            if t == self.update_cluster_frequency:
                 # Cluster for the first time
                 for cluster in range(self.num_clusters):
-                    users_for_cluster = indices(new_groups, cluster)
+                    users_for_cluster = groups[cluster]
                     self.clusters[cluster] = Cluster(users=users_for_cluster, S=np.eye(self.d), b=np.zeros(self.d), N=1)
                 self.groups = new_groups
 
@@ -437,17 +382,12 @@ class DA_LOCB_Static:
                     old_group = self.groups[user]
                     if new_group != old_group:
                         self.clusters[old_group].users.remove(user)
-                        # self.cluster_inds[i].remove(seed)  
                         self.clusters[old_group].S = self.clusters[old_group].S - self.S[user] + np.eye(self.d)
                         self.clusters[old_group].b = self.clusters[old_group].b - self.b[user]
                         self.clusters[old_group].N = self.clusters[old_group].N - self.N[user]
                            
                         self.clusters[new_group].users.add(user)
-                        # self.cluster_inds[i].append(new_group)
                         self.clusters[new_group].S = self.clusters[new_group].S + self.S[user] - np.eye(self.d)
                         self.clusters[new_group].b = self.clusters[new_group].b + self.b[user]
                         self.clusters[new_group].N = self.clusters[new_group].N + self.N[user]
                 self.groups = new_groups
-                for c in range(self.num_clusters):
-                    cluster = self.clusters[c]
-                    print(cluster.users)
